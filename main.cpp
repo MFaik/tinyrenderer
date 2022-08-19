@@ -13,16 +13,22 @@ const int width  = 800;
 const int height = 800;
 const int depth = 255;
 const float c = 10;
-Vec3f light_dir = Vec3f(1,-1,1).normalize();
+Vec3f light_dir = Vec3f(0,1,1).normalize();
 
-inline TGAColor pixelColor(float w1, float w2, Vec3f *texture_pts, TGAImage &diffuse) {
-	Vec3f v1 = texture_pts[1] - texture_pts[0];
-	Vec3f v2 = texture_pts[2] - texture_pts[0];
-	Vec3f p  = texture_pts[0] + v1*w1 + v2*w2; 
-	return diffuse.get(p.x * diffuse.get_width(), p.y * diffuse.get_height());
+inline TGAColor pixelColor(float w1, float w2, Vec3f *texture_pts, Vec3f *vertex_normals, TGAImage &diffuse) {
+	Vec3f pdiff1 = texture_pts[1] - texture_pts[0];
+	Vec3f pdiff2 = texture_pts[2] - texture_pts[0];
+	Vec3f p  = texture_pts[0] + pdiff1*w1 + pdiff2*w2;
+
+	Vec3f ndiff1 = vertex_normals[1] - vertex_normals[0];
+	Vec3f ndiff2 = vertex_normals[2] - vertex_normals[0];
+	Vec3f n = vertex_normals[0];
+	float intensity = (n + ndiff1*w1 + ndiff2*w2)*light_dir;
+	
+	return diffuse.get(p.x * diffuse.get_width(), p.y * diffuse.get_height()) * intensity;
 }
 
-void triangle(Vec3f *pts, Vec3f *texture_pts, float *zbuffer, TGAImage &image, TGAImage &diffuse, float intensity) {
+void triangle(Vec3f *pts, Vec3f *texture_pts, Vec3f *vertex_normals, float *zbuffer, TGAImage &image, TGAImage &diffuse) {
 	// have to swap because of zero division issues
 	if(pts[2].y == pts[0].y){
 		std::swap(pts[0], pts[1]);
@@ -30,6 +36,9 @@ void triangle(Vec3f *pts, Vec3f *texture_pts, float *zbuffer, TGAImage &image, T
 		
 		std::swap(texture_pts[0], texture_pts[1]);
 		std::swap(texture_pts[0], texture_pts[2]);
+
+		std::swap(vertex_normals[0],vertex_normals[1]);
+		std::swap(vertex_normals[0],vertex_normals[2]);
 	}
 	Vec2f bboxmax(0,0);
 	Vec2f bboxmin(image.get_width()-1,image.get_height()-1);
@@ -50,7 +59,7 @@ void triangle(Vec3f *pts, Vec3f *texture_pts, float *zbuffer, TGAImage &image, T
 			if(w1 >= -1e-4 && w2 >= -1e-4 && w1+w2 < 1+1e-4){
 				if(zbuffer[x+y*image.get_width()] < z){
 					zbuffer[x+y*image.get_width()] = z;
-					image.set(x, y, pixelColor(w1, w2, texture_pts, diffuse) * intensity);
+					image.set(x, y, pixelColor(w1, w2, texture_pts, vertex_normals, diffuse));
 				}
 			}
 		}
@@ -98,12 +107,7 @@ int main(int argc, char** argv) {
 	diffuse.flip_vertically();
 
 	Matrix view = Matrix::identity(4);
-	view = lookAt(Vec3f(1,1,3),Vec3f(0,0,0),Vec3f(0,1,0));
-	for(int r = 0; r < 4; r++){
-		for(int c = 0; c < 4 ; c++)
-			printf("%f ",view[r][c]);	
-		printf("\n");
-	}
+	view = lookAt(Vec3f(-1,1,3),Vec3f(0,0,0),Vec3f(0,1,0));
 
 	Matrix projection = Matrix::identity(4);//perspective projection
 	projection[3][2] = -1/c;
@@ -121,19 +125,17 @@ int main(int argc, char** argv) {
     for(int i = 0; i < model->nfaces(); i++) {
         auto face = model->face(i);
         Vec3f pts[3];
-		for(int i = 0; i < 3; i++) pts[i] = model->vert(face[i][0]);
-		Vec3f normal = ((pts[1]-pts[0])^(pts[2]-pts[1])).normalize();
-        for(int i = 0; i < 3; i++) pts[i] = projection*view*Matrix(pts[i]);
+        for(int i = 0; i < 3; i++) pts[i] = projection*view*Matrix(model->vert(face[i][0]));
 		Vec3f projectedNormal = ((pts[1]-pts[0])^(pts[2]-pts[1])).normalize();
 		if(projectedNormal.z > 0){
 			for(int i = 0; i < 3; i++) pts[i] = viewPort*Matrix(pts[i]);
 			Vec3f texture_pts[3];
 			for(int i = 0; i < 3; i++) texture_pts[i] = model->textureVert(face[i][1]);
-			triangle(pts, texture_pts, zbuffer, image, diffuse, normal*light_dir); 
+			Vec3f vertex_normals[3];
+			for(int i = 0; i < 3; i++) vertex_normals[i] = model->normal(face[i][2]);
+			triangle(pts, texture_pts, vertex_normals,zbuffer, image, diffuse); 
 		}
 	}
-	// Vec3f pts[]{Vec3f(120.000000,600.000000,0.466332),Vec3f(332.000000,600.000000,0.415616),Vec3f(314.000000,600.000000,0.455218)};
-	// triangle(pts, zbuffer, image, TGAColor(255));
 
     image.flip_vertically(); // i want to have the origin at the left bottom corner of the image
     image.write_tga_file("output.tga");

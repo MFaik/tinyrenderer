@@ -9,6 +9,7 @@ class Model {
 private:
 	std::vector<Vec3f> verts_;
 	std::vector<Vec3f> textureVerts_;
+	std::vector<Vec3f> normals_;
 	std::vector<std::vector<std::array<int,3> > > faces_;
 public:
 	Model(const char *filename);
@@ -16,6 +17,7 @@ public:
 	int nverts();
 	int nfaces();
 	Vec3f vert(int i);
+	Vec3f normal(int i);
 	Vec3f textureVert(int i);
 	std::vector<std::array<int,3>> face(int idx);
 };
